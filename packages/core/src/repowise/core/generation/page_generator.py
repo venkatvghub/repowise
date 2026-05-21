@@ -34,6 +34,7 @@ from . import onboarding as _onboarding
 from .context_assembler import ContextAssembler, FilePageContext
 from .models import (
     GENERATION_LEVELS,
+    PAGE_TYPE_TIER,
     GeneratedPage,
     GenerationConfig,
     compute_page_id,
@@ -201,8 +202,13 @@ class PageGenerator:
         vector_store: Any | None = None,
         language: str = "en",
         prior_pages: dict[str, "PriorPage"] | None = None,
+        tier_providers: dict[str, BaseProvider] | None = None,
     ) -> None:
         self._provider = provider
+        # Optional tier-to-provider map: {"cheap": <provider>, "medium": ..., "premium": ...}.
+        # When set, _provider_for(page_type) returns the tier-appropriate provider.
+        # Falls back to self._provider for any missing tier.
+        self._tier_providers: dict[str, BaseProvider] = tier_providers or {}
         self._assembler = assembler
         self._config = config
         self._vector_store = vector_store
@@ -1118,6 +1124,7 @@ class PageGenerator:
             total_pages=len(all_pages),
             provider=self._provider.provider_name,
             model=self._provider.model_name,
+            tier_routing=bool(self._tier_providers),
         )
         return all_pages
 
@@ -1201,14 +1208,16 @@ class PageGenerator:
         request_id: str,
         target_path: str | None = None,
     ) -> GeneratedResponse:
-        """Call the provider with caching, optionally prefixing a language instruction."""
+        """Call the tier-appropriate provider with caching."""
+        provider = self._provider_for(page_type)
+
         # Persistent cross-run cache: if the page exists from a prior run, was
         # produced by the same model, and the prompt's source_hash matches,
         # reuse the stored content without an LLM call.
         if self._config.cache_enabled and target_path is not None:
             page_id = compute_page_id(page_type, target_path)
             prior = self._prior_pages.get(page_id)
-            if prior is not None and prior.model_name == self._provider.model_name:
+            if prior is not None and prior.model_name == provider.model_name:
                 current_hash = compute_source_hash(user_prompt)
                 if prior.source_hash == current_hash:
                     self._reuse_count += 1
@@ -1239,7 +1248,7 @@ class PageGenerator:
             (CacheHint(segment="system"),) if self._config.cache_enabled else ()
         )
 
-        response = await self._provider.generate(
+        response = await provider.generate(
             system_prompt,
             user_prompt,
             max_tokens=self._config.max_tokens,
@@ -1253,6 +1262,16 @@ class PageGenerator:
             self._cache[key] = response
 
         return response
+
+    def _provider_for(self, page_type: str) -> BaseProvider:
+        """Return the provider to use for *page_type* based on its cost tier.
+
+        When no tier map is configured all page types use self._provider.
+        """
+        if not self._tier_providers:
+            return self._provider
+        tier = PAGE_TYPE_TIER.get(page_type, "premium")
+        return self._tier_providers.get(tier, self._provider)
 
     def _build_system_prompt(self, page_type: str) -> str:
         base_system = SYSTEM_PROMPTS[page_type]
@@ -1277,7 +1296,8 @@ class PageGenerator:
 
     def _compute_cache_key(self, page_type: str, user_prompt: str) -> str:
         """Return SHA256(model + language + page_type + user_prompt) as cache key."""
-        raw = f"{self._provider.model_name}:{self._language}:{page_type}:{user_prompt}"
+        model = self._provider_for(page_type).model_name
+        raw = f"{model}:{self._language}:{page_type}:{user_prompt}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     def _build_generated_page(
@@ -1290,6 +1310,7 @@ class PageGenerator:
         level: int,
     ) -> GeneratedPage:
         """Wrap a GeneratedResponse in a GeneratedPage."""
+        provider = self._provider_for(page_type)
         now = _now_iso()
         return GeneratedPage(
             page_id=compute_page_id(page_type, target_path),
@@ -1298,8 +1319,8 @@ class PageGenerator:
             content=response.content,
             summary=_extract_summary(response.content),
             source_hash=source_hash,
-            model_name=self._provider.model_name,
-            provider_name=self._provider.provider_name,
+            model_name=provider.model_name,
+            provider_name=provider.provider_name,
             input_tokens=response.input_tokens,
             output_tokens=response.output_tokens,
             cached_tokens=response.cached_tokens,

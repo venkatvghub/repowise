@@ -48,6 +48,23 @@ GENERATION_LEVELS: dict[str, int] = {
     "onboarding": 8,
 }
 
+# Maps PageType → cost tier for model routing.
+# "cheap"   — high-volume, low-context pages (symbol spotlights, file pages).
+# "medium"  — moderate-context pages (module pages, SCC pages, infra pages).
+# "premium" — low-volume, high-context synthesis (repo overview, architecture
+#             diagram, onboarding). Uses the primary/most-capable model.
+PAGE_TYPE_TIER: dict[str, str] = {
+    "api_contract": "medium",
+    "symbol_spotlight": "cheap",
+    "file_page": "cheap",
+    "scc_page": "medium",
+    "module_page": "medium",
+    "repo_overview": "premium",
+    "architecture_diagram": "premium",
+    "infra_page": "medium",
+    "onboarding": "premium",
+}
+
 FreshnessStatus = Literal["fresh", "stale", "expired", "unknown"]
 
 
