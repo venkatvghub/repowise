@@ -93,9 +93,10 @@ _CATALOG_BY_ID = {p["id"]: p for p in PROVIDER_CATALOG}
 # Dynamic model discovery — Ollama and OpenRouter
 # ---------------------------------------------------------------------------
 
-# Simple in-process cache: (models_list, fetched_at_epoch).
-_OLLAMA_MODELS_CACHE: tuple[list[str], float] | None = None
-_OPENROUTER_MODELS_CACHE: tuple[list[str], float] | None = None
+# In-process cache keyed by config value: (config_key, models_list, fetched_at_epoch).
+# Invalidated immediately when base_url / api_key changes, not just on TTL expiry.
+_OLLAMA_MODELS_CACHE: tuple[str, list[str], float] | None = None
+_OPENROUTER_MODELS_CACHE: tuple[str, list[str], float] | None = None
 _DISCOVERY_CACHE_TTL = 3600.0  # seconds
 
 # Curated OpenRouter models shown when live fetch fails or returns nothing useful.
@@ -169,15 +170,15 @@ def _get_ollama_models_cached() -> list[str]:
 
     now = time.time()
     if _OLLAMA_MODELS_CACHE is not None:
-        models, fetched_at = _OLLAMA_MODELS_CACHE
-        if now - fetched_at < _DISCOVERY_CACHE_TTL:
+        cached_base_url, models, fetched_at = _OLLAMA_MODELS_CACHE
+        if cached_base_url == base_url and now - fetched_at < _DISCOVERY_CACHE_TTL:
             return models
 
     models = _fetch_ollama_models(base_url)
     if not models:
         # Fall back to catalog defaults when Ollama is unreachable
         models = list(_CATALOG_BY_ID["ollama"]["models"])
-    _OLLAMA_MODELS_CACHE = (models, now)
+    _OLLAMA_MODELS_CACHE = (base_url, models, now)
     return models
 
 
@@ -191,12 +192,12 @@ def _get_openrouter_models_cached() -> list[str]:
 
     now = time.time()
     if _OPENROUTER_MODELS_CACHE is not None:
-        models, fetched_at = _OPENROUTER_MODELS_CACHE
-        if now - fetched_at < _DISCOVERY_CACHE_TTL:
+        cached_api_key, models, fetched_at = _OPENROUTER_MODELS_CACHE
+        if cached_api_key == api_key and now - fetched_at < _DISCOVERY_CACHE_TTL:
             return models
 
     models = _fetch_openrouter_models(api_key)
-    _OPENROUTER_MODELS_CACHE = (models, now)
+    _OPENROUTER_MODELS_CACHE = (api_key, models, now)
     return models
 
 

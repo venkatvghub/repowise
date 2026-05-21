@@ -54,6 +54,7 @@ class PriorPage:
     """
 
     source_hash: str
+    provider_name: str
     model_name: str
     content: str
     input_tokens: int = 0
@@ -1217,7 +1218,11 @@ class PageGenerator:
         if self._config.cache_enabled and target_path is not None:
             page_id = compute_page_id(page_type, target_path)
             prior = self._prior_pages.get(page_id)
-            if prior is not None and prior.model_name == provider.model_name:
+            if (
+                prior is not None
+                and prior.provider_name == provider.provider_name
+                and prior.model_name == provider.model_name
+            ):
                 current_hash = compute_source_hash(user_prompt)
                 if prior.source_hash == current_hash:
                     self._reuse_count += 1
