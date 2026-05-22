@@ -496,7 +496,7 @@ def _workspace_init(
     force: bool = False,
     onboarding: bool = True,
     coverage_pct: float | None = None,
-    no_editor_setup: bool = False,
+    editor_setup: bool = False,
 ) -> None:
     """Multi-repo workspace initialization.
 
@@ -817,7 +817,7 @@ def _workspace_init(
 
     # Step 6: Register primary repo with configured editor clients
     primary_entry = ws_config.get_primary()
-    if primary_entry and not no_editor_setup:
+    if primary_entry and editor_setup:
         primary_path = (root / primary_entry.path).resolve()
         register_editor_clients(console, primary_path)
 
@@ -1014,13 +1014,13 @@ def _workspace_init(
     ),
 )
 @click.option(
-    "--no-editor-setup",
-    "no_editor_setup",
+    "--editor-setup",
+    "editor_setup",
     is_flag=True,
     default=False,
     help=(
-        "Skip automatic registration of repowise MCP server and Claude Code hooks. "
-        "Use when you want to manage editor integration manually."
+        "Register repowise MCP server and hooks into global editor settings "
+        "(~/.claude/settings.json, Claude Desktop). Off by default — opt in explicitly."
     ),
 )
 @click.option(
@@ -1073,7 +1073,7 @@ def init_command(
     init_all: bool,
     onboarding: bool,
     coverage_pct: float | None,
-    no_editor_setup: bool,
+    editor_setup: bool,
     cheap_model: str | None,
     medium_model: str | None,
     premium_model: str | None,
@@ -1137,7 +1137,7 @@ def init_command(
             force=force,
             onboarding=onboarding,
             coverage_pct=coverage_pct,
-            no_editor_setup=no_editor_setup,
+            editor_setup=editor_setup,
         )
         return
 
@@ -1715,7 +1715,7 @@ def init_command(
         repo_path,
         options=editor_options,
     )
-    if not no_editor_setup:
+    if editor_setup:
         register_editor_clients(console, repo_path)
 
     # ---- State (always) ----
