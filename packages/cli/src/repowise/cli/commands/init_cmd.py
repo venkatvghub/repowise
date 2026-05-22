@@ -259,6 +259,7 @@ def _run_workspace_generation(
     reasoning: str = "auto",
     onboarding: bool = True,
     coverage_pct: float | None = None,
+    tier_providers: dict | None = None,
 ) -> list[Any]:
     """Run LLM generation for a single repo in the workspace init flow.
 
@@ -458,6 +459,7 @@ def _run_workspace_generation(
                 resume=resume,
                 cost_tracker=cost_tracker,
                 generation_config=gen_config,
+                tier_providers=tier_providers,
             )
         )
 
@@ -494,6 +496,7 @@ def _workspace_init(
     force: bool = False,
     onboarding: bool = True,
     coverage_pct: float | None = None,
+    no_editor_setup: bool = False,
 ) -> None:
     """Multi-repo workspace initialization.
 
@@ -814,7 +817,7 @@ def _workspace_init(
 
     # Step 6: Register primary repo with configured editor clients
     primary_entry = ws_config.get_primary()
-    if primary_entry:
+    if primary_entry and not no_editor_setup:
         primary_path = (root / primary_entry.path).resolve()
         register_editor_clients(console, primary_path)
 
@@ -1010,6 +1013,43 @@ def _workspace_init(
         "interactive: prompt; otherwise 0.20."
     ),
 )
+@click.option(
+    "--no-editor-setup",
+    "no_editor_setup",
+    is_flag=True,
+    default=False,
+    help=(
+        "Skip automatic registration of repowise MCP server and Claude Code hooks. "
+        "Use when you want to manage editor integration manually."
+    ),
+)
+@click.option(
+    "--cheap-model",
+    default=None,
+    metavar="MODEL",
+    help=(
+        "Model for cheap-tier pages (file_page, symbol_spotlight). "
+        "Defaults to the main --model. Example: claude-haiku-4-5"
+    ),
+)
+@click.option(
+    "--medium-model",
+    default=None,
+    metavar="MODEL",
+    help=(
+        "Model for medium-tier pages (module_page, scc_page, infra_page, api_contract). "
+        "Defaults to the main --model."
+    ),
+)
+@click.option(
+    "--premium-model",
+    default=None,
+    metavar="MODEL",
+    help=(
+        "Model for premium-tier pages (repo_overview, architecture_diagram, onboarding). "
+        "Defaults to the main --model."
+    ),
+)
 def init_command(
     path: str | None,
     provider_name: str | None,
@@ -1033,6 +1073,10 @@ def init_command(
     init_all: bool,
     onboarding: bool,
     coverage_pct: float | None,
+    no_editor_setup: bool,
+    cheap_model: str | None,
+    medium_model: str | None,
+    premium_model: str | None,
 ) -> None:
     """Generate wiki documentation for a codebase.
 
@@ -1093,6 +1137,7 @@ def init_command(
             force=force,
             onboarding=onboarding,
             coverage_pct=coverage_pct,
+            no_editor_setup=no_editor_setup,
         )
         return
 
@@ -1579,6 +1624,22 @@ def init_command(
                 # accept _cost_tracker as an attribute)
                 provider._cost_tracker = cost_tracker
 
+                tier_providers: dict | None = None
+                if cheap_model or medium_model or premium_model:
+                    tier_providers = {}
+                    if cheap_model:
+                        tier_providers["cheap"] = resolve_provider(
+                            provider_name, cheap_model, repo_path
+                        )
+                    if medium_model:
+                        tier_providers["medium"] = resolve_provider(
+                            provider_name, medium_model, repo_path
+                        )
+                    if premium_model:
+                        tier_providers["premium"] = resolve_provider(
+                            provider_name, premium_model, repo_path
+                        )
+
                 generated_pages = run_async(
                     run_generation(
                         repo_path=repo_path,
@@ -1595,6 +1656,7 @@ def init_command(
                         resume=resume,
                         cost_tracker=cost_tracker,
                         generation_config=gen_config,
+                        tier_providers=tier_providers,
                     )
                 )
 
@@ -1653,7 +1715,8 @@ def init_command(
         repo_path,
         options=editor_options,
     )
-    register_editor_clients(console, repo_path)
+    if not no_editor_setup:
+        register_editor_clients(console, repo_path)
 
     # ---- State (always) ----
     # Even in index-only mode we persist `last_sync_commit` so that a

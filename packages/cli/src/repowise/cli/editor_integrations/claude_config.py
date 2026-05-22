@@ -74,7 +74,7 @@ def install_claude_code_hooks() -> Path | None:
         "hooks": [
             {
                 "type": "command",
-                "command": "repowise-augment",
+                "command": "command -v repowise-augment >/dev/null 2>&1 && repowise-augment || true",
                 "timeout": 10,
                 "statusMessage": "Checking codebase context...",
             }
