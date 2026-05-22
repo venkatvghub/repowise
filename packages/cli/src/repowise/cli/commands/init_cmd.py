@@ -50,6 +50,21 @@ class CostGateDeclined(Exception):
     """
 
 
+def _generation_subtitle(provider: Any, tier_providers: dict | None) -> str:
+    """Build the Phase 3 subtitle showing active models per tier."""
+    base = f"{provider.provider_name} / {provider.model_name}"
+    if not tier_providers:
+        return f"Generating wiki pages with {base}"
+    parts = []
+    if "cheap" in tier_providers:
+        parts.append(f"cheap→{tier_providers['cheap'].model_name}")
+    if "medium" in tier_providers:
+        parts.append(f"medium→{tier_providers['medium'].model_name}")
+    if "premium" in tier_providers:
+        parts.append(f"premium→{tier_providers['premium'].model_name}")
+    return f"Generating wiki pages with {base} [{', '.join(parts)}]"
+
+
 def _confirm_cost_gate(message: str) -> bool:
     """Render the cost-gate `[y/N]` prompt with visual padding.
 
@@ -1422,7 +1437,7 @@ def init_command(
             3,
             total_phases,
             "Generation",
-            f"Generating wiki pages with {provider.provider_name} / {provider.model_name}",
+            _generation_subtitle(provider, tier_providers),
         )
 
         # Cost estimation + coverage selection. The coverage chooser
