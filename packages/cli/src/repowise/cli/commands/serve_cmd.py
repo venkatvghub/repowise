@@ -395,6 +395,14 @@ def serve_command(
         console.print("[red]uvicorn is not installed. Install it with: pip install repowise[/red]")
         raise SystemExit(1) from None
 
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(Path.cwd())
+
+    # Ensure REPOWISE_HOST reflects the actual bind address so that deps.py
+    # auth logic is consistent regardless of .env file ordering.
+    os.environ["REPOWISE_HOST"] = host
+
     _setup_embedder()
 
     # Auto-detect local .repowise/ directory if REPOWISE_DB_URL is not set.

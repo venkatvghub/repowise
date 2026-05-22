@@ -32,6 +32,7 @@ def estimate_cost(
     model_name: str,
     *,
     repo_path: Path | str | None = None,
+    tier_model_names: dict[str, str] | None = None,
 ) -> CostEstimate:
     """Estimate token counts and USD cost from a generation plan.
 
@@ -39,23 +40,38 @@ def estimate_cost(
     in ``.repowise/db.sqlite``, the estimate is calibrated against the
     actual averages from that repo. Otherwise the static heuristics in
     :mod:`heuristics` are used and a wider variance bracket is reported.
+
+    ``tier_model_names`` maps tier names ("cheap", "medium", "premium") to
+    model identifiers. When provided, each page type is priced at its tier's
+    model rate rather than the main ``model_name``.
     """
+    from repowise.core.generation.models import PAGE_TYPE_TIER
+
     telemetry: dict[str, tuple[float, float]] = {}
     if repo_path is not None:
         telemetry = load_telemetry_averages(repo_path)
     is_calibrated = bool(telemetry)
 
     total_pages = sum(p.count for p in plans)
-    total_input = 0.0
-    total_output = 0.0
+    median_cost = 0.0
 
     for plan in plans:
         inp, out = _tokens_per_page(plan.page_type, telemetry=telemetry)
-        total_input += inp * plan.count
-        total_output += out * plan.count
+        # Use tier-specific model if provided, else fall back to main model
+        tier = PAGE_TYPE_TIER.get(plan.page_type, "medium")
+        page_model = (tier_model_names or {}).get(tier, model_name)
+        input_rate, output_rate = _lookup_cost(page_model)
+        median_cost += ((inp * plan.count) / 1000) * input_rate + (
+            (out * plan.count) / 1000
+        ) * output_rate
 
-    input_rate, output_rate = _lookup_cost(model_name)
-    median_cost = (total_input / 1000) * input_rate + (total_output / 1000) * output_rate
+    # Keep backwards-compat totals (used elsewhere for display)
+    total_input = sum(
+        _tokens_per_page(p.page_type, telemetry=telemetry)[0] * p.count for p in plans
+    )
+    total_output = sum(
+        _tokens_per_page(p.page_type, telemetry=telemetry)[1] * p.count for p in plans
+    )
 
     # Tighter variance when telemetry calibrated us; wider for cold-start.
     variance = 0.10 if is_calibrated else HEURISTIC_VARIANCE

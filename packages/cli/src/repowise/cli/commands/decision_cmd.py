@@ -25,6 +25,7 @@ def _resolve_decision_repo(path: str | None):
     path, targets the primary repo and prints a transparency notice.
     """
     from pathlib import Path
+    from repowise.cli.ui import load_dotenv
 
     target = resolve_command_target(path=path)
     target.notice(console, command="decision")
@@ -32,8 +33,10 @@ def _resolve_decision_repo(path: str | None):
         primary = target.primary_path()
         if primary is None:
             raise click.ClickException("Workspace has no primary repo configured.")
+        load_dotenv(primary)
         return primary
     assert target.repo_path is not None
+    load_dotenv(target.repo_path)
     return target.repo_path
 
 

@@ -272,6 +272,10 @@ def watch_command(
     )
     target.notice(console, command="watch")
 
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(target.repo_path or Path.cwd())
+
     if target.is_workspace:
         assert target.ws_root is not None
         _watch_workspace(target.ws_root, debounce_ms)

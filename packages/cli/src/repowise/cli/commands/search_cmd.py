@@ -67,6 +67,10 @@ def search_command(
     )
     target.notice(console, command=f"search ({mode})")
 
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(target.repo_path or Path.cwd())
+
     repo_paths: list[Path] = []
     if target.is_workspace:
         assert target.ws_root is not None and target.ws_config is not None

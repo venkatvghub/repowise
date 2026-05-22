@@ -310,40 +310,74 @@ _PROVIDER_SIGNUP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def load_dotenv(repo_path: Path) -> None:
-    """Load ``<repo>/.repowise/.env`` into ``os.environ`` (without overwriting).
-
-    Supports ``export KEY=value``, quoted values (``KEY="value"``, ``KEY='value'``),
-    and inline comments (``KEY=value  # comment``).
-    """
-    env_file = repo_path / ".repowise" / ".env"
+def _apply_env_file(env_file: Path) -> None:
+    """Parse and apply a .env file into os.environ without overwriting existing vars."""
     if not env_file.exists():
         return
     for line in env_file.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        # Support `export KEY=value`
         if line.startswith("export "):
             line = line[len("export "):].lstrip()
         if "=" not in line:
             continue
         key, _, raw_value = line.partition("=")
         key = key.strip()
-        # Strip inline comments from the value (e.g. "sk-xxx  # my key")
         raw_value = raw_value.strip()
         if "#" in raw_value:
-            # Only strip if # is preceded by whitespace (avoid stripping # in URLs)
             hash_idx = raw_value.find(" #")
             if hash_idx == -1:
                 hash_idx = raw_value.find("\t#")
             if hash_idx >= 0:
                 raw_value = raw_value[:hash_idx].rstrip()
-        # Strip matching surrounding quotes
         value = _strip_quotes(raw_value)
-        # Don't overwrite existing env vars (explicit env takes priority)
         if key and value and key not in os.environ:
             os.environ[key] = value
+
+
+def load_dotenv(repo_path: Path) -> None:
+    """Load ``<repo>/.repowise/.env`` into ``os.environ`` (without overwriting)."""
+    _apply_env_file(repo_path / ".repowise" / ".env")
+
+
+def load_global_dotenv() -> None:
+    """Load repowise's own .env at CLI startup (without overwriting existing vars).
+
+    Checks in order:
+    1. ``REPOWISE_ENV_FILE`` — explicit path, highest priority.
+    2. ``~/.repowise/.env`` — user-level global config.
+    3. Walk up from the repowise binary location — finds .env in dev installs
+       (e.g. ``<project>/.venv/bin/repowise`` → loads ``<project>/.env``).
+    """
+    import shutil
+    import sys
+
+    explicit = os.environ.get("REPOWISE_ENV_FILE")
+    if explicit:
+        explicit_path = Path(explicit).expanduser()
+        if explicit_path.exists() and explicit_path.is_file():
+            _apply_env_file(explicit_path)
+            return
+
+    # User-level global config
+    _apply_env_file(Path.home() / ".repowise" / ".env")
+
+    # Walk up from binary to find a .env in the installation root.
+    # Use shutil.which so a bare console-script name resolves to the real
+    # executable path rather than a relative path from CWD.
+    # Handles dev installs: <project>/.venv/bin/repowise → <project>/.env
+    resolved_argv0 = shutil.which(sys.argv[0]) or sys.argv[0]
+    binary = Path(resolved_argv0).expanduser().resolve()
+    candidate = binary.parent
+    for _ in range(5):
+        candidate = candidate.parent
+        env_file = candidate / ".env"
+        if env_file.exists():
+            _apply_env_file(env_file)
+            break
+        if candidate == candidate.parent:
+            break
 
 
 def _strip_quotes(value: str) -> str:

@@ -354,6 +354,7 @@ async def load_prior_pages(
     for row in result.scalars():
         prior[row.id] = PriorPage(
             source_hash=row.source_hash,
+            provider_name=row.provider_name,
             model_name=row.model_name,
             content=row.content,
             input_tokens=row.input_tokens,

@@ -50,6 +50,21 @@ class CostGateDeclined(Exception):
     """
 
 
+def _generation_subtitle(provider: Any, tier_providers: dict | None) -> str:
+    """Build the Phase 3 subtitle showing active models per tier."""
+    base = f"{provider.provider_name} / {provider.model_name}"
+    if not tier_providers:
+        return f"Generating wiki pages with {base}"
+    parts = []
+    if "cheap" in tier_providers:
+        parts.append(f"cheap→{tier_providers['cheap'].model_name}")
+    if "medium" in tier_providers:
+        parts.append(f"medium→{tier_providers['medium'].model_name}")
+    if "premium" in tier_providers:
+        parts.append(f"premium→{tier_providers['premium'].model_name}")
+    return f"Generating wiki pages with {base} [{', '.join(parts)}]"
+
+
 def _confirm_cost_gate(message: str) -> bool:
     """Render the cost-gate `[y/N]` prompt with visual padding.
 
@@ -259,6 +274,7 @@ def _run_workspace_generation(
     reasoning: str = "auto",
     onboarding: bool = True,
     coverage_pct: float | None = None,
+    tier_providers: dict | None = None,
 ) -> list[Any]:
     """Run LLM generation for a single repo in the workspace init flow.
 
@@ -344,6 +360,7 @@ def _run_workspace_generation(
             repo_path=repo_path,
             skip_tests=skip_tests,
             skip_infra=skip_infra,
+            tier_model_names=tier_providers and {k: v.model_name for k, v in tier_providers.items()},
         )
         chosen = interactive_coverage_select(console, options)
         chosen_pct = chosen.pct
@@ -458,6 +475,7 @@ def _run_workspace_generation(
                 resume=resume,
                 cost_tracker=cost_tracker,
                 generation_config=gen_config,
+                tier_providers=tier_providers,
             )
         )
 
@@ -494,6 +512,7 @@ def _workspace_init(
     force: bool = False,
     onboarding: bool = True,
     coverage_pct: float | None = None,
+    editor_setup: bool = False,
 ) -> None:
     """Multi-repo workspace initialization.
 
@@ -814,7 +833,7 @@ def _workspace_init(
 
     # Step 6: Register primary repo with configured editor clients
     primary_entry = ws_config.get_primary()
-    if primary_entry:
+    if primary_entry and editor_setup:
         primary_path = (root / primary_entry.path).resolve()
         register_editor_clients(console, primary_path)
 
@@ -1010,6 +1029,43 @@ def _workspace_init(
         "interactive: prompt; otherwise 0.20."
     ),
 )
+@click.option(
+    "--editor-setup",
+    "editor_setup",
+    is_flag=True,
+    default=False,
+    help=(
+        "Register repowise MCP server and hooks into global editor settings "
+        "(~/.claude/settings.json, Claude Desktop). Off by default — opt in explicitly."
+    ),
+)
+@click.option(
+    "--cheap-model",
+    default=None,
+    metavar="MODEL",
+    help=(
+        "Model for cheap-tier pages (file_page, symbol_spotlight). "
+        "Defaults to the main --model. Example: claude-haiku-4-5"
+    ),
+)
+@click.option(
+    "--medium-model",
+    default=None,
+    metavar="MODEL",
+    help=(
+        "Model for medium-tier pages (module_page, scc_page, infra_page, api_contract). "
+        "Defaults to the main --model."
+    ),
+)
+@click.option(
+    "--premium-model",
+    default=None,
+    metavar="MODEL",
+    help=(
+        "Model for premium-tier pages (repo_overview, architecture_diagram, onboarding). "
+        "Defaults to the main --model."
+    ),
+)
 def init_command(
     path: str | None,
     provider_name: str | None,
@@ -1033,6 +1089,10 @@ def init_command(
     init_all: bool,
     onboarding: bool,
     coverage_pct: float | None,
+    editor_setup: bool,
+    cheap_model: str | None,
+    medium_model: str | None,
+    premium_model: str | None,
 ) -> None:
     """Generate wiki documentation for a codebase.
 
@@ -1093,6 +1153,7 @@ def init_command(
             force=force,
             onboarding=onboarding,
             coverage_pct=coverage_pct,
+            editor_setup=editor_setup,
         )
         return
 
@@ -1224,6 +1285,16 @@ def init_command(
             provider_name, model = _ips(console, model)
 
         provider = resolve_provider(provider_name, model, repo_path)
+        # Build tier providers now so cost estimation can use per-tier pricing.
+        tier_providers: dict | None = None
+        if cheap_model or medium_model or premium_model:
+            tier_providers = {}
+            if cheap_model:
+                tier_providers["cheap"] = resolve_provider(provider_name, cheap_model, repo_path)
+            if medium_model:
+                tier_providers["medium"] = resolve_provider(provider_name, medium_model, repo_path)
+            if premium_model:
+                tier_providers["premium"] = resolve_provider(provider_name, premium_model, repo_path)
         # resolve_provider / interactive_provider_select may have just set
         # the API key in os.environ. Re-resolve the embedder so the
         # display (and the embed path below) honors the key the user just
@@ -1366,7 +1437,7 @@ def init_command(
             3,
             total_phases,
             "Generation",
-            f"Generating wiki pages with {provider.provider_name} / {provider.model_name}",
+            _generation_subtitle(provider, tier_providers),
         )
 
         # Cost estimation + coverage selection. The coverage chooser
@@ -1394,6 +1465,7 @@ def init_command(
                 repo_path=repo_path,
                 skip_tests=skip_tests,
                 skip_infra=skip_infra,
+                tier_model_names=tier_providers and {k: v.model_name for k, v in tier_providers.items()},
             )
             chosen = interactive_coverage_select(console, options)
             chosen_pct = chosen.pct
@@ -1418,6 +1490,7 @@ def init_command(
                 provider.provider_name,
                 provider.model_name,
                 repo_path=repo_path,
+                tier_model_names=tier_providers and {k: v.model_name for k, v in tier_providers.items()},
             )
 
         gen_config = _replace_cfg(
@@ -1473,9 +1546,11 @@ def init_command(
             return
 
         cost_declined = (
-            est.estimated_cost_usd > 2.00
+            est.estimated_cost_usd > 10.00
             and not yes
-            and not _confirm_cost_gate("  Estimated cost exceeds $2.00. Continue?")
+            and not _confirm_cost_gate(
+                f"  Estimated cost is ${est.estimated_cost_usd:.2f}. Continue?"
+            )
         )
         if cost_declined:
             console.print(
@@ -1595,6 +1670,7 @@ def init_command(
                         resume=resume,
                         cost_tracker=cost_tracker,
                         generation_config=gen_config,
+                        tier_providers=tier_providers,
                     )
                 )
 
@@ -1653,7 +1729,8 @@ def init_command(
         repo_path,
         options=editor_options,
     )
-    register_editor_clients(console, repo_path)
+    if editor_setup:
+        register_editor_clients(console, repo_path)
 
     # ---- State (always) ----
     # Even in index-only mode we persist `last_sync_commit` so that a
@@ -1831,14 +1908,10 @@ def init_command(
             top_hotspot=_top_hotspot,
         )
 
-        from repowise.cli.mcp_config import format_setup_instructions
-
         console.print()
         console.print(
             build_completion_panel("repowise init complete", metrics, next_steps=next_steps)
         )
-        console.print()
-        console.print(format_setup_instructions(repo_path))
         console.print()
 
     # Offer to install post-commit hook (both index-only and full modes)

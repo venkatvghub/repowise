@@ -1047,6 +1047,7 @@ async def run_generation(
     dead_code_report: Any | None = None,
     decision_report: Any | None = None,
     external_systems: list[dict] | None = None,
+    tier_providers: dict | None = None,
 ) -> list[Any]:
     """Run LLM-powered page generation.
 
@@ -1119,6 +1120,7 @@ async def run_generation(
         config,
         vector_store=vector_store,
         language=config.language,
+        tier_providers=tier_providers,
     )
 
     generated_pages = await generator.generate_all(

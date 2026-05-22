@@ -1,3 +1,6 @@
+# Playwright MCP session snapshots
+.playwright-mcp/
+
 # Python
 __pycache__/
 *.py[cod]

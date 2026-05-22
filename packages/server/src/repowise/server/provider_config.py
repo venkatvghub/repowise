@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,117 @@ PROVIDER_CATALOG: list[dict[str, Any]] = [
 ]
 
 _CATALOG_BY_ID = {p["id"]: p for p in PROVIDER_CATALOG}
+
+# ---------------------------------------------------------------------------
+# Dynamic model discovery — Ollama and OpenRouter
+# ---------------------------------------------------------------------------
+
+# In-process cache keyed by config value: (config_key, models_list, fetched_at_epoch).
+# Invalidated immediately when base_url / api_key changes, not just on TTL expiry.
+_OLLAMA_MODELS_CACHE: tuple[str, list[str], float] | None = None
+_OPENROUTER_MODELS_CACHE: tuple[str, list[str], float] | None = None
+_DISCOVERY_CACHE_TTL = 3600.0  # seconds
+
+# Curated OpenRouter models shown when live fetch fails or returns nothing useful.
+_OPENROUTER_FALLBACK_MODELS: list[str] = [
+    "anthropic/claude-sonnet-4.6",
+    "google/gemini-3.1-flash-lite-preview",
+    "meta-llama/llama-4-maverick",
+    "openai/gpt-4o",
+]
+
+# Only surface free or low-cost OpenRouter models when auto-discovering.
+# Models whose IDs contain any of these strings are included; all others are
+# filtered out so the list stays manageable.
+_OPENROUTER_INCLUDE_PATTERNS = (
+    "claude",
+    "gemini",
+    "llama",
+    "gpt-4o",
+    "mistral",
+    "deepseek",
+    "qwen",
+)
+
+
+def _fetch_ollama_models(base_url: str) -> list[str]:
+    """Fetch available model names from a running Ollama instance via GET /api/tags."""
+    try:
+        import httpx
+
+        url = base_url.rstrip("/") + "/api/tags"
+        resp = httpx.get(url, timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+        return [m["name"] for m in data.get("models", []) if m.get("name")]
+    except Exception as exc:
+        logger.warning("ollama_model_discovery_failed: %s", exc)
+        return []
+
+
+def _fetch_openrouter_models(api_key: str) -> list[str]:
+    """Fetch available models from the OpenRouter API, filtered to useful ones."""
+    try:
+        import httpx
+
+        resp = httpx.get(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        raw_ids: list[str] = [m["id"] for m in data.get("data", []) if m.get("id")]
+        filtered = [
+            mid
+            for mid in raw_ids
+            if any(pat in mid.lower() for pat in _OPENROUTER_INCLUDE_PATTERNS)
+        ]
+        return filtered if filtered else _OPENROUTER_FALLBACK_MODELS
+    except Exception as exc:
+        logger.warning("openrouter_model_discovery_failed: %s", exc)
+        return _OPENROUTER_FALLBACK_MODELS
+
+
+def _get_ollama_models_cached() -> list[str]:
+    """Return Ollama model list, re-fetching when cache is stale."""
+    global _OLLAMA_MODELS_CACHE
+
+    base_url = os.environ.get("OLLAMA_BASE_URL", "").strip()
+    if not base_url:
+        base_url = "http://localhost:11434"
+
+    now = time.time()
+    if _OLLAMA_MODELS_CACHE is not None:
+        cached_base_url, models, fetched_at = _OLLAMA_MODELS_CACHE
+        if cached_base_url == base_url and now - fetched_at < _DISCOVERY_CACHE_TTL:
+            return models
+
+    models = _fetch_ollama_models(base_url)
+    if not models:
+        # Fall back to catalog defaults when Ollama is unreachable
+        models = list(_CATALOG_BY_ID["ollama"]["models"])
+    _OLLAMA_MODELS_CACHE = (base_url, models, now)
+    return models
+
+
+def _get_openrouter_models_cached() -> list[str]:
+    """Return OpenRouter model list, re-fetching when cache is stale."""
+    global _OPENROUTER_MODELS_CACHE
+
+    api_key = _get_key_for_provider("openrouter")
+    if not api_key:
+        return _OPENROUTER_FALLBACK_MODELS
+
+    now = time.time()
+    if _OPENROUTER_MODELS_CACHE is not None:
+        cached_api_key, models, fetched_at = _OPENROUTER_MODELS_CACHE
+        if cached_api_key == api_key and now - fetched_at < _DISCOVERY_CACHE_TTL:
+            return models
+
+    models = _fetch_openrouter_models(api_key)
+    _OPENROUTER_MODELS_CACHE = (api_key, models, now)
+    return models
 
 
 # ---------------------------------------------------------------------------
@@ -175,11 +287,20 @@ def list_provider_status() -> dict[str, Any]:
     for p in PROVIDER_CATALOG:
         has_key = bool(_get_key_for_provider(p["id"]))
         configured = has_key or not p["requires_key"]
+
+        # Dynamic model discovery for Ollama and OpenRouter.
+        if p["id"] == "ollama" and configured:
+            models = _get_ollama_models_cached()
+        elif p["id"] == "openrouter" and configured:
+            models = _get_openrouter_models_cached()
+        else:
+            models = p["models"]
+
         providers.append(
             {
                 "id": p["id"],
                 "name": p["name"],
-                "models": p["models"],
+                "models": models,
                 "default_model": p["default_model"],
                 "configured": configured,
             }
