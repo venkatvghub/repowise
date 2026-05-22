@@ -31,6 +31,15 @@ from repowise.cli.commands.workspace_cmd import workspace_group
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """repowise -- codebase intelligence for developers and AI."""
+    # Load repowise's own .env early so API keys are available without
+    # requiring the user to manually source the file.
+    try:
+        from repowise.cli.ui import load_global_dotenv
+
+        load_global_dotenv()
+    except Exception:
+        pass
+
     # Self-heal: migrate any legacy `repowise augment` Claude Code hooks
     # to the import-isolated `repowise-augment` console script. Cheap,
     # silent, idempotent — only writes when there is something to change.
