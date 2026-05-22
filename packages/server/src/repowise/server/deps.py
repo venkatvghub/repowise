@@ -22,7 +22,7 @@ from repowise.core.persistence.database import get_session
 
 logger = logging.getLogger(__name__)
 
-_API_KEY = os.environ.get("REPOWISE_API_KEY")
+_API_KEY = os.environ.get("REPOWISE_API_KEY") or None
 _REPOWISE_HOST = os.environ.get("REPOWISE_HOST", "127.0.0.1")
 _header_scheme = APIKeyHeader(name="Authorization", auto_error=False)
 
