@@ -350,19 +350,25 @@ def load_global_dotenv() -> None:
     3. Walk up from the repowise binary location — finds .env in dev installs
        (e.g. ``<project>/.venv/bin/repowise`` → loads ``<project>/.env``).
     """
+    import shutil
     import sys
 
     explicit = os.environ.get("REPOWISE_ENV_FILE")
     if explicit:
-        _apply_env_file(Path(explicit))
-        return
+        explicit_path = Path(explicit).expanduser()
+        if explicit_path.exists() and explicit_path.is_file():
+            _apply_env_file(explicit_path)
+            return
 
     # User-level global config
     _apply_env_file(Path.home() / ".repowise" / ".env")
 
-    # Walk up from binary to find a .env in the installation root
+    # Walk up from binary to find a .env in the installation root.
+    # Use shutil.which so a bare console-script name resolves to the real
+    # executable path rather than a relative path from CWD.
     # Handles dev installs: <project>/.venv/bin/repowise → <project>/.env
-    binary = Path(sys.argv[0]).resolve()
+    resolved_argv0 = shutil.which(sys.argv[0]) or sys.argv[0]
+    binary = Path(resolved_argv0).expanduser().resolve()
     candidate = binary.parent
     for _ in range(5):
         candidate = candidate.parent
