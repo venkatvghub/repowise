@@ -101,6 +101,10 @@ def costs_command(
     )
     target.notice(console, command="costs")
 
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(target.repo_path or Path.cwd())
+
     # Resolve which repo paths to query
     repo_paths: list[Path] = []
     if target.is_workspace:

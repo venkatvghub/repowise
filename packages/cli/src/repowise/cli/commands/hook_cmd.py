@@ -29,6 +29,11 @@ def _hook_target(
         no_workspace_flag=no_workspace,
     )
     target.notice(console, command="hook")
+
+    from pathlib import Path
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(target.repo_path or Path.cwd())
     return target
 
 

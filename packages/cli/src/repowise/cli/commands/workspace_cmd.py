@@ -38,6 +38,9 @@ def _require_workspace(start: Path | None = None) -> tuple[Path, "WorkspaceConfi
             "No .repowise-workspace.yaml found. "
             "Run 'repowise init <workspace-dir>' to create a workspace."
         )
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(start or ws_root)
     ws_config = WorkspaceConfig.load(ws_root)
     return ws_root, ws_config
 

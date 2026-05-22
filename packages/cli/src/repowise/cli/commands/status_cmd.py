@@ -354,6 +354,10 @@ def status_command(path: str | None, workspace: bool, no_workspace: bool) -> Non
     )
     target.notice(console, command="status")
 
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(target.repo_path or Path.cwd())
+
     if target.is_workspace:
         _workspace_status(target)
         return

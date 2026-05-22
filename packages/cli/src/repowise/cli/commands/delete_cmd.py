@@ -21,6 +21,10 @@ from repowise.cli.helpers import (
 def delete_command(repo_id: str | None, force: bool, path: str | None) -> None:
     """Delete a repository and all its generated data."""
     repo_path = resolve_repo_path(path)
+
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(repo_path)
     repowise_dir = get_repowise_dir(repo_path)
 
     if not repowise_dir.exists():

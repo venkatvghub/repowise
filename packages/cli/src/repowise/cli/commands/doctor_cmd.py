@@ -443,6 +443,10 @@ def doctor_command(
     )
     target.notice(console, command="doctor")
 
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(target.repo_path or _DoctorPath.cwd())
+
     if not target.is_workspace:
         assert target.repo_path is not None
         _run_repo_checks(target.repo_path, repair)

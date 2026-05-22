@@ -48,6 +48,10 @@ def export_command(
 ) -> None:
     """Export wiki pages to files."""
     repo_path = resolve_repo_path(path)
+
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(repo_path)
     ensure_repowise_dir(repo_path)
 
     out = repo_path / ".repowise" / "export" if output_dir is None else Path(output_dir).resolve()

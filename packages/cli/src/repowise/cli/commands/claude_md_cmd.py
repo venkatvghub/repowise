@@ -78,6 +78,10 @@ def claude_md_command(
     )
     target.notice(console, command="generate-claude-md")
 
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(target.repo_path or Path.cwd())
+
     if target.is_workspace:
         assert target.ws_root is not None
         try:

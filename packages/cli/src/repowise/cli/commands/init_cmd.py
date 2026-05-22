@@ -1908,14 +1908,10 @@ def init_command(
             top_hotspot=_top_hotspot,
         )
 
-        from repowise.cli.mcp_config import format_setup_instructions
-
         console.print()
         console.print(
             build_completion_panel("repowise init complete", metrics, next_steps=next_steps)
         )
-        console.print()
-        console.print(format_setup_instructions(repo_path))
         console.print()
 
     # Offer to install post-commit hook (both index-only and full modes)

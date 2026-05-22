@@ -121,6 +121,11 @@ def health_command(
     )
     target.notice(status, command="health")
 
+    from pathlib import Path
+    from repowise.cli.ui import load_dotenv
+
+    load_dotenv(target.repo_path or Path.cwd())
+
     if target.is_workspace:
         if target.repo_filter is not None:
             picked = target.resolve_repo_alias(target.repo_filter)
