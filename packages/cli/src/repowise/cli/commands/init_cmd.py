@@ -345,6 +345,7 @@ def _run_workspace_generation(
             repo_path=repo_path,
             skip_tests=skip_tests,
             skip_infra=skip_infra,
+            tier_model_names=tier_providers and {k: v.model_name for k, v in tier_providers.items()},
         )
         chosen = interactive_coverage_select(console, options)
         chosen_pct = chosen.pct
@@ -1269,6 +1270,16 @@ def init_command(
             provider_name, model = _ips(console, model)
 
         provider = resolve_provider(provider_name, model, repo_path)
+        # Build tier providers now so cost estimation can use per-tier pricing.
+        tier_providers: dict | None = None
+        if cheap_model or medium_model or premium_model:
+            tier_providers = {}
+            if cheap_model:
+                tier_providers["cheap"] = resolve_provider(provider_name, cheap_model, repo_path)
+            if medium_model:
+                tier_providers["medium"] = resolve_provider(provider_name, medium_model, repo_path)
+            if premium_model:
+                tier_providers["premium"] = resolve_provider(provider_name, premium_model, repo_path)
         # resolve_provider / interactive_provider_select may have just set
         # the API key in os.environ. Re-resolve the embedder so the
         # display (and the embed path below) honors the key the user just
@@ -1439,6 +1450,7 @@ def init_command(
                 repo_path=repo_path,
                 skip_tests=skip_tests,
                 skip_infra=skip_infra,
+                tier_model_names=tier_providers and {k: v.model_name for k, v in tier_providers.items()},
             )
             chosen = interactive_coverage_select(console, options)
             chosen_pct = chosen.pct
@@ -1463,6 +1475,7 @@ def init_command(
                 provider.provider_name,
                 provider.model_name,
                 repo_path=repo_path,
+                tier_model_names=tier_providers and {k: v.model_name for k, v in tier_providers.items()},
             )
 
         gen_config = _replace_cfg(
@@ -1518,9 +1531,11 @@ def init_command(
             return
 
         cost_declined = (
-            est.estimated_cost_usd > 2.00
+            est.estimated_cost_usd > 10.00
             and not yes
-            and not _confirm_cost_gate("  Estimated cost exceeds $2.00. Continue?")
+            and not _confirm_cost_gate(
+                f"  Estimated cost is ${est.estimated_cost_usd:.2f}. Continue?"
+            )
         )
         if cost_declined:
             console.print(
@@ -1623,22 +1638,6 @@ def init_command(
                 # Attach tracker to provider unconditionally (all providers now
                 # accept _cost_tracker as an attribute)
                 provider._cost_tracker = cost_tracker
-
-                tier_providers: dict | None = None
-                if cheap_model or medium_model or premium_model:
-                    tier_providers = {}
-                    if cheap_model:
-                        tier_providers["cheap"] = resolve_provider(
-                            provider_name, cheap_model, repo_path
-                        )
-                    if medium_model:
-                        tier_providers["medium"] = resolve_provider(
-                            provider_name, medium_model, repo_path
-                        )
-                    if premium_model:
-                        tier_providers["premium"] = resolve_provider(
-                            provider_name, premium_model, repo_path
-                        )
 
                 generated_pages = run_async(
                     run_generation(

@@ -54,11 +54,13 @@ def compute_coverage_options(
     skip_infra: bool = False,
     percentages: tuple[float, ...] = DEFAULT_COVERAGE_OPTIONS,
     recommended: float = RECOMMENDED_COVERAGE,
+    tier_model_names: dict[str, str] | None = None,
 ) -> list[CoverageOption]:
     """Return one :class:`CoverageOption` per requested percentage.
 
     ``base_config`` is cloned per percentage so this never mutates the
-    caller's object.
+    caller's object. ``tier_model_names`` maps tier → model name for
+    tier-aware cost estimation.
     """
     from dataclasses import replace
 
@@ -73,6 +75,7 @@ def compute_coverage_options(
             provider_name,
             model_name,
             repo_path=repo_path,
+            tier_model_names=tier_model_names,
         )
         options.append(
             CoverageOption(
